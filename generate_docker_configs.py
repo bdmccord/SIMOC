@@ -4,11 +4,12 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 
-def main(env=os.environ):
+def main(current_path, env=os.environ):
     j2_env = Environment(loader=FileSystemLoader('./'),
                          trim_blocks=True, lstrip_blocks=True,
                          undefined=StrictUndefined)
     config = {
+        "current_path": current_path,
         "version": env.get('VERSION', 'latest'),
         "use_dockerhub": int(env.get('USE_DOCKERHUB', False)),
         "docker_repo": env.get('DOCKER_REPO', ''),

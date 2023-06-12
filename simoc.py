@@ -23,6 +23,16 @@ AGENT_DESC_COMPOSE_FILE = 'docker-compose.agent-desc.yml'
 TESTING_COMPOSE_FILE = 'docker-compose.testing.yml'
 DOCKER_COMPOSE_CMD = ['docker-compose', '-f', COMPOSE_FILE]
 
+CURRENT_PATH = pathlib.Path.cwd().resolve().name
+NETWORK_NAME = f'{CURRENT_PATH}_simoc-net'
+DB_NAME = f'{CURRENT_PATH}_simoc-db'
+DB_VOLUME = f'{CURRENT_PATH}_db-data'
+DB_TESTING = f'{CURRENT_PATH}_db-testing'
+FLASK_CONTAINER = f'{CURRENT_PATH}_flask'
+CELERY_CONTAINER = f'{CURRENT_PATH}_celery'
+REDIS_CONTAINER = f'{CURRENT_PATH}_redis'
+NGINX_CONTAINER = f'{CURRENT_PATH}_nginx'
+
 
 def parse_env(fname):
     env = {}
@@ -37,13 +47,14 @@ def parse_env(fname):
                 print(f'Unrecognized line in {fname}: {line!r}')
     return env
 
-try:
-    ENVVARS = parse_env(ENV_FILE)
-except FileNotFoundError:
-    sys.exit(f"Can't find env file: {ENV_FILE!r}")
-
-# update environ with the new envvars
-os.environ.update(ENVVARS)
+def update_env(env_file):
+    try:
+        envvars = parse_env(env_file)
+    except FileNotFoundError:
+        sys.exit(f"Can't find env file: {env_file!r}")
+    # update environ with the new envvars
+    os.environ.update(envvars)
+    return envvars
 
 COMMANDS = {}
 
@@ -135,7 +146,7 @@ def generate_scripts():
     """Generate simoc_nginx.conf and docker-compose.mysql.yml."""
     install_jinja()
     import generate_docker_configs
-    return generate_docker_configs.main()
+    return generate_docker_configs.main(CURRENT_PATH)
 
 @cmd
 def make_cert():
@@ -161,9 +172,9 @@ def make_cert():
 @cmd
 def build_images():
     """Build the flask and celery images locally."""
-    return (docker('build', '-t', 'simoc_flask', '.') and
+    return (docker('build', '-t', FLASK_CONTAINER, '.') and
             docker('build', '-f', 'Dockerfile-celery-worker',
-                   '-t', 'simoc_celery', '.'))
+                   '-t', CELERY_CONTAINER, '.'))
 
 @cmd
 def start_services():
@@ -195,7 +206,7 @@ def init_db():
 def remove_db():
     """Remove the volume for the MySQL DB."""
     docker_compose('rm', '--stop', '-v', '-f', 'simoc-db')
-    docker('volume', 'rm', 'simoc_db-data')
+    docker('volume', 'rm', DB_VOLUME)
     return True  # the volume rm might return False if the volume is missing
 
 
@@ -255,12 +266,12 @@ def post_setup_msg():
     """Print a message and ask to open SIMOC in the browser."""
     print('Setup completed!')
     if pathlib.Path('simoc_server', 'dist').exists():
-        url = 'http://localhost:8000/'
+        url = f'http://localhost:{os.environ["HTTP_PORT"]}/'
         print(f'You can now access SIMOC at <{url}>.' )
         ans = input('Do you want to open SIMOC on your browser? [Y/n] ')
         if ans.lower().strip() != 'n':
             import webbrowser
-            webbrowser.open_new_tab('http://localhost:8000/')
+            webbrowser.open_new_tab(url)
     return True
 
 @cmd
@@ -289,7 +300,7 @@ def test(*args):
     # add the testing yml that replaces the db
     DOCKER_COMPOSE_CMD.extend(['-f', TESTING_COMPOSE_FILE])
     # check if the volume already exists
-    cp = subprocess.run(['docker', 'volume', 'inspect', 'simoc_db-testing'],
+    cp = subprocess.run(['docker', 'volume', 'inspect', DB_TESTING],
                         capture_output=True)
     vol_info = json.loads(cp.stdout)
     if not vol_info:
@@ -319,12 +330,12 @@ def adminer(db=None):
         # show the volume that is currently connected to the db container
         cp = subprocess.run(['docker', 'inspect', '-f',
                              '{{range .Mounts}}{{.Name}}{{end}}',
-                             'simoc_simoc-db_1'], capture_output=True)
+                             f'{DB_NAME}_1'], capture_output=True)
         print('* Starting adminer at: http://localhost:8081/')
         print('* Connecting to:', cp.stdout.decode('utf-8'))
         return True
-    cmd = ['run', '--network', 'simoc_simoc-net',
-           '--link', 'simoc_simoc-db_1:db', '-p', '8081:8080',
+    cmd = ['run', '--network', NETWORK_NAME,
+           '--link', '{DB_NAME}_1:db', '-p', '8081:8080',
            '-e', 'ADMINER_DESIGN=dracula', 'adminer']
     return up() and show_info() and docker(*cmd)
 
@@ -390,6 +401,10 @@ Use the `--with-dev-backend` flag to run the dev backend container.
         help='the docker-compose yml file (default: %(default)r)'
     )
     parser.add_argument(
+        '--env-file', metavar='FILE', default=ENV_FILE,
+        help='the env file (default: %(default)r)'
+    )
+    parser.add_argument(
         '--with-dev-frontend', action='store_true',
         help='also start the dev frontend container'
     )
@@ -421,6 +436,10 @@ Use the `--with-dev-backend` flag to run the dev backend container.
     if args.docker_file:
         COMPOSE_FILE = args.docker_file
         DOCKER_COMPOSE_CMD = ['docker-compose', '-f', COMPOSE_FILE]
+
+    if args.env_file:
+        ENV_FILE = args.env_file
+    ENVVARS = update_env(ENV_FILE)
 
     if (args.dev_frontend_dir or args.dev_frontend_yml) and not args.with_dev_frontend:
         parser.error("Can't specify the dev frontend dir/yml without --with-dev-frontend")
