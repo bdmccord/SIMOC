@@ -21,4 +21,4 @@ scipy==1.14.1
 setuptools==71.0.3
 simoc_abm==1.1.2
 sqlalchemy==1.4.46
-werkzeug==2.3.8
+werkzeug==3.0.6
