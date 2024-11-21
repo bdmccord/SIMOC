@@ -189,6 +189,7 @@ def convert_configuration(game_config, agent_desc=None, save_output=False):
     """
     full_game_config = {  # The object to be returned by this function.
         'agents': {},
+        'currencies': {},
         'termination': [],
     }
     # Create a working_config which will be modified by this function, so as
@@ -287,25 +288,43 @@ def convert_configuration(game_config, agent_desc=None, save_output=False):
 
     # Plants: A list of objects with 'species' and 'amount'
     plants_in_config = []
-    input_food_storage = working_config.pop('food_storage', None)
+    input_food_storage = working_config.pop('food_storage', None) #### FOOD STORAGE GRABBED ####
     crop_mgmt_input = working_config.pop('improvedCropManagement', False)
     crop_mgmt_factor = 1.5 if crop_mgmt_input is True else 1
+
     if 'plants' in working_config and isinstance(working_config['plants'], list):
         plants = working_config.pop('plants')
+        app.logger.info(f'ZZZZZZZZZZZZZZZZZ PLANTS  ZZZZZZZZZZZZZZZZZ {plants} ' )
         for plant in plants:
             amount = plant.get('amount', 0) or 0
-            plant_type = plant.get('species', None)
+            plant_type = plant.pop('species')
             if not (plant_type and amount):
                 continue
             plants_in_config.append(plant_type)
-            working_config[plant_type] = dict(amount=amount)
+            plant['amount']=amount
+            if plant_type not in working_config: # Could be in the working config already as a custom agent
+                working_config[plant_type]=plant
+            else:
+                working_config[plant_type]['amount']=amount
             if is_b2:
                 working_config[plant_type]['properties'] = {
                     'crop_management_factor': {'value': crop_mgmt_factor},
                     'density_factor': {'value': 0.5}
                 }
+        app.logger.info(f'BBBBBBBBBBBBBB WORKING CONFIG  BBBBBBBBBBBBBBBB {working_config} ' )
+    # 'plants' in working_config correspond to the ones selected by the user in the wizard,
+    # but does not include custom plant agents that were not selected in wizard but may have
+    # been sent over as an agent, which need to be removed before simulation start.
+    unused_custom_plants = []
+    for agent_key, config_agent in working_config.items():
+        if 'agent_class' in config_agent and config_agent['agent_class']=='plants':
+            if agent_key not in plants_in_config:
+                unused_custom_plants.append(agent_key)
+    for deletable_plant in unused_custom_plants:
+        working_config.pop(deletable_plant)
+    # For the plants that are actually in the simulation, add lamps
     if plants_in_config:
-        working_config['food_storage'] = dict(amount=1)
+        working_config['food_storage'] = dict(amount=1) 
         # Lights
         if is_b2:
             working_config['b2_sun'] = {'amount': 1}
@@ -320,12 +339,16 @@ def convert_configuration(game_config, agent_desc=None, save_output=False):
                                            'flows': {'out': {'par': {'connections': [lamp_id]}}}}
                 # Add connection to plant 'par' flow
                 par_flow_stub = {'in': {'par': {'connections': [lamp_id]}}}
-                working_config[species]['flows'] = par_flow_stub
+                if 'flows' in working_config[species]:
+                    working_config[species]['flows']['in']['par']['connections'].clear() # Remove excess lamps
+                    working_config[species]['flows']['in']['par']['connections'].append(lamp_id) # Add specific lamp
+                else:
+                    working_config[species]['flows']=par_flow_stub
                 # Everything else (amt, rate, schedule) managed by LampAgent
      # Default Storages: Some listed, some not. Need to calculate amount.
     # 'food_storage' now holds fresh food, and 'ration_storage' holds the rations. Rations are
     # still pre-loaded to 'food_storage' on the front-end though, so need to change the label.
-    if input_food_storage and input_food_storage.get('ration') is not None:                                                                # b2: initialize with food (plants) instead of rations
+    if input_food_storage and input_food_storage.get('ration') is not None: # b2: initialize with food (plants) instead of rations
         if is_b2:
             starting_food = input_food_storage['ration']
             greenhouse_layout = {p: working_config[p]['amount'] for p in plants_in_config}
@@ -357,7 +380,25 @@ def convert_configuration(game_config, agent_desc=None, save_output=False):
                 capacity = agent_desc[storage_type]['capacity'][field]
                 amount = max(amount, math.ceil(value / capacity))
         storage_agent['amount'] = amount
-        working_config[storage_type] = storage_agent
+        working_config[storage_type] = storage_agent    
+        
+    # For any custom food currencies, it is necessary that food storage be created for them
+    # Because food storage is set to a new object above (and combined later with food storage in simoc-abm's 
+    # default JSON file), a capacity is defined subobject is defined here.
+    custom_currencies = {}
+    if 'currencies' in working_config:
+        custom_currencies = working_config.pop('currencies') # These are later added to config in format expected by simoc-abm
+        working_config['food_storage']['capacity']={};
+        # Check if each custom currency is a food, and if it is, add a food storage capacity for this food.
+        for currency_name, currency_parameters in custom_currencies.items():
+            if 'category' in currency_parameters:
+                if currency_parameters['category'] == 'food':
+                      #  working_config['food_storage']['capacity']['rice_7']=10000; ## HARD CODED
+                       working_config['food_storage']['capacity'][currency_name]=10000 
+    # Next, iterate through the custom agents and see if they are a food type agent.
+    # If they are, set the capacity to 10,000 which is the default hardcoded amount in the simoc-abm JSON for a food item
+    
+    
     if 'human_agent' in working_config:
         human = working_config.pop('human_agent')
         working_config['human'] = human
@@ -447,9 +488,17 @@ def convert_configuration(game_config, agent_desc=None, save_output=False):
     #                   STEP 3: Add all agents to output                      #
     ###########################################################################
 
+
     for agent_id, agent in working_config.items():
         full_game_config['agents'][agent_id] = agent
-
+        
+    for currency_id, currency in custom_currencies.items():
+            full_game_config['currencies'][currency_id] = currency
+    
+    # Might need something like this to eliminate excess currency bug:
+    #if(plant.custom_flag=true)
+        #full_game_config['currencies']= new currency for custom plant
+        
     # Print result
     if save_output:
         timestamp = datetime.datetime.now()

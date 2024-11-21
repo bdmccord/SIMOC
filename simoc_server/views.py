@@ -281,13 +281,17 @@ def new_game():
         raise BadRequest("step_num is required.")
     step_num = int(input["step_num"])
     try:
+        app.logger.info(f'XXXXXXXXXX PRE GAME CONFIG XXXXXXXXXXXXXX {input["game_config"]} ' )
         game_config = convert_configuration(input["game_config"])
+        app.logger.info(f'BBBBBBBBBBBBB POST GAME CONFIG BBBBBBBBBBBBB {game_config} ' )
     except BadRequest as e:
         raise BadRequest(f"Cannot retrieve game config. Reason: {e}")
     if step_num >= MAX_STEP_NUMBER:
         raise BadRequest("Too many steps requested.")
     user = get_standard_user_obj()
     user_cleanup(user)
+
+   
     tasks.new_game.apply_async(args=[user.username, game_config, step_num])
     while True:
         time.sleep(0.5)
