@@ -60,7 +60,7 @@ jobs:
           npm run build
           ls -ld $PWD/dist/*
       - name: Upload dist folder
-        uses: appleboy/scp-action@v0.1.4
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ github.event.inputs.host }}.simoc.space
           username: ${{ secrets.SSH_USERNAME }}
