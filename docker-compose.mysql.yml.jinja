@@ -1,7 +1,7 @@
 version: '3.6'
 services:
   nginx:
-    image: nginx
+    image: nginx:1.25-alpine
     {% if use_certbot %}
     command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
     {% endif %}
@@ -57,7 +57,7 @@ services:
     {% if redis_use_bitnami %}
     image: bitnami/redis:latest
     {% else %}
-    image: redis:latest
+    image: redis:7.0-alpine
     {% endif %}
     restart: always
     ports:
@@ -67,7 +67,7 @@ services:
     environment:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     {% if not redis_use_bitnami %}
-    command: ["bash", "-c", 'docker-entrypoint.sh --requirepass $REDIS_PASSWORD']
+    command: ["sh", "-c", 'docker-entrypoint.sh --requirepass $REDIS_PASSWORD']
     {% endif %}
   celery-worker:
     {% if use_dockerhub %}

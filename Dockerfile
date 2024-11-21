@@ -1,16 +1,11 @@
-FROM ubuntu:22.04
-
-MAINTAINER Iurii Milovanov "duruku@gmail.com"
+FROM python:3.11.3-slim-bullseye
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    python3-pip \
-    python3-setuptools \
-    curl && \
-    python3 -m pip install --upgrade pip
+    curl
 
 COPY ./requirements.txt /simoc/requirements.txt
-RUN python3 -m pip install -r /simoc/requirements.txt
+RUN pip install -r /simoc/requirements.txt
 
 COPY . /simoc
 
