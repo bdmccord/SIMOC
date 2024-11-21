@@ -1,0 +1,43 @@
+name: Publish Docs to simoc.space
+
+on:
+  push:
+    paths:
+      - 'docs/**'
+  pull_request:
+    paths:
+      - 'docs/**'
+  workflow_dispatch:
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+      - name: Install SIMOC Dependencies
+        # these are needed for autodoc
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt
+      - name: Install Docs Dependencies
+        run: |
+          python3 -m pip install sphinx sphinx-rtd-theme sphinx-jsonschema sphinx-lint
+      - name: Build Docs
+        run: |
+          cd docs
+          make html
+      - name: Check Docs
+        run: |
+          sphinx-lint --enable default-role docs
+      - name: Upload to simoc.space
+        # Only upload when the workflow is triggered manually or
+        # when a PR that affects docs is merged on master.
+        # The always() ensures that this is run even if the
+        # sphinx-lint check failed.
+        if: ${{ always() && (github.event_name == 'workflow_dispatch' ||
+                (github.event_name == 'push' && github.ref_name == 'master')) }}
+        run: |
+          echo 'Uploading docs to simoc.space...'
+          ls -l docs/_build/html
+          # TODO: upload with SCP
